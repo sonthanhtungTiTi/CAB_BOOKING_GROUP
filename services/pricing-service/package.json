@@ -1,0 +1,13 @@
+{
+  "name": "pricing-service",
+  "version": "1.0.0",
+  "description": "Pricing Microservice - Rides fare calculation",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.2",
+    "dotenv": "^16.4.7",
+    "morgan": "^1.10.0",
+    "pg": "^8.13.1",
+    "shared": "1.0.0"
+  }
+}

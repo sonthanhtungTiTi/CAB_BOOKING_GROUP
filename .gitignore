@@ -1,0 +1,29 @@
+# compiled output
+/dist
+/node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# env
+.env
+!.env.example
+
+# coverage
+/coverage
+
+# Docker volumes
+/data

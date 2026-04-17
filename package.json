@@ -1,0 +1,45 @@
+{
+  "name": "cab-booking-system",
+  "version": "1.0.0",
+  "description": "CAB Booking System - Node.js + Express Microservices",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "api-gateway",
+    "services/*"
+  ],
+  "scripts": {
+    "start:gateway": "node api-gateway/server.js",
+    "start:auth": "node services/auth-service/server.js",
+    "start:user": "node services/user-service/server.js",
+    "start:driver": "node services/driver-service/server.js",
+    "start:booking": "node services/booking-service/server.js",
+    "start:ride": "node services/ride-service/server.js",
+    "start:notif": "node services/notification-service/server.js",
+    "start:pricing": "node services/pricing-service/server.js",
+    "start:payment": "node services/payment-service/server.js",
+    "start:ai": "node services/ai-service/server.js",
+    "start:review": "node services/review-service/server.js",
+    "start:all": "concurrently \"npm run start:gateway\" \"npm run start:auth\" \"npm run start:user\" \"npm run start:driver\" \"npm run start:booking\" \"npm run start:ride\" \"npm run start:notif\" \"npm run start:pricing\" \"npm run start:payment\" \"npm run start:ai\" \"npm run start:review\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "test": "jest --runInBand --detectOpenHandles --forceExit",
+    "test:level1": "jest __tests__/level1.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level2": "jest __tests__/level2.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level3": "jest __tests__/level3.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level4": "jest __tests__/level4.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level5": "jest __tests__/level5.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level6": "jest __tests__/level6.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level8": "jest __tests__/level8.integration.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level9": "jest __tests__/level9.security.test.js --runInBand --detectOpenHandles --forceExit",
+    "test:level10": "jest __tests__/level10.zerotrust.test.js --runInBand --detectOpenHandles --forceExit"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "jest": "^30.3.0",
+    "nodemon": "^3.1.9",
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7.2.2"
+  }
+}

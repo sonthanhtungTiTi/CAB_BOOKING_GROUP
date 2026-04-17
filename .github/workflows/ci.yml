@@ -1,0 +1,222 @@
+# ═══════════════════════════════════════════════════════════════
+#  CAB Booking System — CI Pipeline (GitHub Actions)
+#  
+#  Tự động chạy 10 Test Cases Level 1 mỗi khi push/PR vào main.
+#  Pipeline: Checkout → Setup → Docker Infra → Start Services → Test
+# ═══════════════════════════════════════════════════════════════
+
+name: CI — Level 1-6, 8-10 Integration Tests (90 TC)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_ENV: test
+  API_GATEWAY_PORT: 3000
+  AUTH_SERVICE_PORT: 4001
+  AUTH_SERVICE_URL: http://127.0.0.1:4001
+  POSTGRES_HOST: 127.0.0.1
+  POSTGRES_PORT: 5433
+  POSTGRES_USER: cab_user
+  POSTGRES_PASSWORD: cab_secret_2024
+  POSTGRES_DB: cab_auth_db
+  REDIS_HOST: 127.0.0.1
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: cab_redis_2024
+  KAFKA_BROKER: 127.0.0.1:9092
+  KAFKA_GROUP_ID: cab-booking-group
+  JWT_ACCESS_SECRET: cab_ci_access_secret_2024
+  JWT_REFRESH_SECRET: cab_ci_refresh_secret_2024
+  JWT_ACCESS_EXPIRATION: 15m
+  JWT_REFRESH_EXPIRATION: 7d
+  MONGO_URI: mongodb://localhost:27018/cab_review_db
+  MONGO_PORT: 27018
+  REVIEW_SERVICE_PORT: 3008
+  REVIEW_SERVICE_URL: http://127.0.0.1:3008
+
+jobs:
+  test-level1:
+    name: 🧪 Level 1-6, 8-10 Integration Tests (90 TC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ─── 1. Checkout mã nguồn ──────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── 2. Setup Node.js ──────────────────────────────────
+      - name: 🟢 Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # ─── 3. Install Dependencies ───────────────────────────
+      - name: 📦 Install dependencies
+        run: npm install
+
+      # ─── 4. Start Infrastructure (Docker) ──────────────────
+      - name: 🐳 Start infrastructure (Postgres, Redis, Kafka, MongoDB)
+        run: |
+          docker compose up -d postgres redis zookeeper mongodb
+          echo "⏳ Waiting 10s for Postgres, Redis, MongoDB to be ready..."
+          sleep 10
+
+          docker compose up -d kafka
+          echo "⏳ Waiting 15s for Kafka to connect to Zookeeper..."
+          sleep 15
+
+          echo "✅ Infrastructure health check:"
+          docker compose ps
+
+      # ─── 5. Verify Infrastructure ──────────────────────────
+      - name: 🔍 Verify infrastructure health
+        run: |
+          echo "--- PostgreSQL ---"
+          docker exec cab_postgres pg_isready -U cab_user -d cab_auth_db || echo "⚠️ Postgres not ready"
+
+          echo "--- Redis ---"
+          docker exec cab_redis redis-cli -a cab_redis_2024 ping || echo "⚠️ Redis not ready"
+
+          echo "--- Kafka ---"  
+          docker exec cab_kafka kafka-topics --list --bootstrap-server localhost:9092 2>/dev/null || echo "⚠️ Kafka not ready (OK if empty)"
+
+          echo "--- MongoDB ---"
+          docker exec cab_mongodb mongosh --eval "db.adminCommand('ping')" 2>/dev/null || echo "⚠️ MongoDB not ready"
+
+      # ─── 5b. Create all PostgreSQL databases ───────────────
+      - name: 🗄️ Create PostgreSQL databases for all services
+        run: |
+          echo "Creating databases for microservices..."
+          for DB in cab_booking_db cab_user_db cab_driver_db cab_pricing_db cab_payment_db; do
+            docker exec cab_postgres psql -U cab_user -d cab_auth_db -c "CREATE DATABASE $DB;" 2>/dev/null || echo "ℹ️ $DB already exists"
+          done
+          echo "✅ Verifying all databases:"
+          docker exec cab_postgres psql -U cab_user -d cab_auth_db -c "\l" | grep cab_ || true
+
+      # ─── 6. Start All Microservices ────────────────────────
+      - name: 🚀 Start all microservices (background)
+        run: |
+          # Start each service in background
+          nohup node services/auth-service/server.js > /tmp/auth.log 2>&1 &
+          nohup node services/user-service/server.js > /tmp/user.log 2>&1 &
+          nohup node services/driver-service/server.js > /tmp/driver.log 2>&1 &
+          nohup node services/booking-service/server.js > /tmp/booking.log 2>&1 &
+          nohup node services/ride-service/server.js > /tmp/ride.log 2>&1 &
+          nohup node services/notification-service/server.js > /tmp/notif.log 2>&1 &
+          nohup node services/pricing-service/server.js > /tmp/pricing.log 2>&1 &
+          nohup node services/payment-service/server.js > /tmp/payment.log 2>&1 &
+          nohup node services/ai-service/server.js > /tmp/ai.log 2>&1 &
+          nohup node services/review-service/server.js > /tmp/review.log 2>&1 &
+
+          # Start API Gateway last (depends on auth-service being up)
+          sleep 5
+          nohup node api-gateway/server.js > /tmp/gateway.log 2>&1 &
+
+          echo "⏳ Waiting 25s for all services to initialize (Kafka consumers, DB tables)..."
+          sleep 25
+
+      # ─── 7. Wait for Gateway to be ready ───────────────────
+      - name: ⏳ Wait for API Gateway (health check)
+        run: |
+          MAX_RETRIES=30
+          RETRY_INTERVAL=3
+          for i in $(seq 1 $MAX_RETRIES); do
+            if curl -s http://127.0.0.1:3000/api/health > /dev/null 2>&1; then
+              echo "✅ API Gateway is ready! (attempt $i)"
+              curl -s http://127.0.0.1:3000/api/health | jq . || true
+              break
+            fi
+            echo "⏳ Attempt $i/$MAX_RETRIES — Gateway not ready, retrying in ${RETRY_INTERVAL}s..."
+            sleep $RETRY_INTERVAL
+          done
+
+      - name: ⏳ Wait for downstream services (Booking, Pricing, AI, Notification)
+        run: |
+          echo "Checking downstream services..."
+          SERVICES="4001 4004 4006 4008 4010"
+          for PORT in $SERVICES; do
+            for i in $(seq 1 20); do
+              if nc -z 127.0.0.1 $PORT 2>/dev/null; then
+                echo "✅ Service on port $PORT is ready (attempt $i)"
+                break
+              fi
+              if [ $i -eq 20 ]; then
+                echo "⚠️ Service on port $PORT may not be ready"
+              fi
+              sleep 2
+            done
+          done
+          echo "⏳ Extra 5s buffer for Kafka consumers to stabilize..."
+          sleep 5
+          echo "✅ All services should be ready"
+
+      # ─── 7b. Debug: Show service logs ──────────────────────
+      - name: 📋 Debug — Show service startup logs
+        run: |
+          echo "=== Booking Service ==="
+          tail -20 /tmp/booking.log || echo "No booking log"
+          echo ""
+          echo "=== Pricing Service ==="
+          tail -20 /tmp/pricing.log || echo "No pricing log"
+          echo ""
+          echo "=== Gateway ==="
+          tail -20 /tmp/gateway.log || echo "No gateway log"
+
+      # ─── 8. Run Level 1 Tests ──────────────────────────────
+      - name: 🧪 Run Level 1 Integration Tests
+        run: npm run test:level1
+
+      # ─── 8b. Run Level 2 Tests ─────────────────────────────
+      - name: 🧪 Run Level 2 Integration Tests
+        run: npm run test:level2
+
+      # ─── 8c. Run Level 3 Tests ─────────────────────────────
+      - name: 🧪 Run Level 3 Integration Tests
+        run: npm run test:level3
+
+      # ─── 8d. Run Level 4 Tests ─────────────────────────────
+      - name: 🧪 Run Level 4 Integration Tests
+        run: npm run test:level4
+
+      # ─── 8e. Run Level 5 Tests ─────────────────────────────
+      - name: 🧪 Run Level 5 Integration Tests
+        run: npm run test:level5
+
+      # ─── 8f. Run Level 6 Tests (AI Agent Logic) ─────────────
+      - name: 🤖 Run Level 6 Integration Tests
+        run: npm run test:level6
+
+      # ─── 8g. Run Level 8 Tests (Failure & Resilience) ───────
+      # Level 7 = k6 performance tests → manual only, not in CI
+      - name: 🛡️ Run Level 8 Integration Tests
+        run: npm run test:level8
+
+      # ─── 8h. Run Level 9 Tests (Security) ──────────────────
+      - name: 🔐 Run Level 9 Security Tests
+        run: npm run test:level9
+
+      # ─── 8i. Run Level 10 Tests (Zero Trust) ─────────────
+      - name: 🏰 Run Level 10 Zero Trust Tests
+        run: npm run test:level10
+
+      # ─── 9. Upload logs on failure ─────────────────────────
+      - name: 📋 Upload service logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: /tmp/*.log
+          retention-days: 7
+
+      # ─── 10. Cleanup ───────────────────────────────────────
+      - name: 🧹 Cleanup
+        if: always()
+        run: |
+          pkill -f "node services/" || true
+          pkill -f "node api-gateway/" || true
+          docker compose down -v || true

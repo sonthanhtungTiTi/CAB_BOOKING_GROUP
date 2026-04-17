@@ -1,0 +1,22 @@
+# ─── Prometheus Configuration for CAB Booking System ─────────
+# Scrape metrics from API Gateway's /metrics endpoint (prom-client).
+
+global:
+  scrape_interval: 15s      # Thu thập metrics mỗi 15 giây
+  evaluation_interval: 15s  # Đánh giá rules mỗi 15 giây
+  scrape_timeout: 10s       # Timeout cho mỗi lần scrape
+
+scrape_configs:
+  # ─── API Gateway Metrics ──────────────────────────────────────
+  - job_name: 'api-gateway'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+        labels:
+          service: 'api-gateway'
+          env: 'development'
+
+  # ─── Prometheus Self-Monitoring ───────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

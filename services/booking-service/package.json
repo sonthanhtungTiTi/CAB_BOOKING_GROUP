@@ -1,0 +1,15 @@
+{
+  "name": "booking-service",
+  "version": "1.0.0",
+  "description": "Booking Microservice - Ride booking management",
+  "main": "server.js",
+  "dependencies": {
+    "axios-retry": "^4.5.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "morgan": "^1.10.0",
+    "opossum": "^9.0.0",
+    "pg": "^8.13.1",
+    "shared": "1.0.0"
+  }
+}

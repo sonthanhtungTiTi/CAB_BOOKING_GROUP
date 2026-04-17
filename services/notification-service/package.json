@@ -1,0 +1,13 @@
+{
+  "name": "notification-service",
+  "version": "1.0.0",
+  "description": "Notification Microservice - Real-time push via Redis Pub/Sub",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.2",
+    "dotenv": "^16.4.7",
+    "morgan": "^1.10.0",
+    "ioredis": "^5.4.2",
+    "shared": "1.0.0"
+  }
+}

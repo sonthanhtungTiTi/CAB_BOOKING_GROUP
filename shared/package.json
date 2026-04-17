@@ -1,0 +1,9 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "description": "Shared utilities, middlewares, constants, and Kafka client",
+  "main": "index.js",
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+}
