@@ -255,20 +255,159 @@ Test tự động sẽ bắn **10 requests đồng thời** bằng `Promise.all(
 
 ---
 
-## 📊 BẢNG TÓM TẮT TC51 → TC60
+## 📊 Chi tiết Test Cases theo Cấu trúc Chuẩn (TC51 → TC60)
 
-| TC | Tên | Input đặc biệt | Expect |
-|----|------|-----------------|--------|
-| 51 | Composite Scoring | 3 online + 1 offline | Chọn theo điểm, không chọn offline |
-| 52 | Score Ordering | Như TC51 | `all_scores` giảm dần |
-| 53 | Weight Balancing | 2 driver cùng distance | Rating cao hơn thắng |
-| 54 | Tool Calling | Bất kỳ | Steps: ETA → Pricing → Driver |
-| 55 | Missing Data | Thiếu rating, traffic | Không NaN, dùng default |
-| 56 | Retry (Normal) | `simulate_agent_fail: false` | `is_fallback: false` |
-| 57 | Filter Offline | Mix online/offline | Chỉ online trong `all_scores` |
-| 58 | Decision Log | Bất kỳ | `decision_log` chứa `[AGENT DECISION]` |
-| 59 | Concurrent | 10 request song song | Tất cả 200, data không lẫn |
-| 60 | Fallback | `simulate_agent_fail: true` | `is_fallback: true`, driver ONLINE đầu tiên |
+### TC51: Composite scoring chọn tài xế tối ưu
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-CLOSE-LOW", "distance_km": 0.5, "rating": 3.2, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-FAR-HIGH", "distance_km": 8.0, "rating": 4.9, "status": "ONLINE", "price": 80000 },
+      { "driver_id": "D-MID-MID", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 },
+      { "driver_id": "D-OFFLINE", "distance_km": 0.3, "rating": 5.0, "status": "OFFLINE", "price": 20000 }
+    ],
+    "distance_km": 5,
+    "traffic_level": 0.3
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; có `selected_driver`, `score > 0`; không chọn `D-OFFLINE`; `all_scores.length = 3`
+* **Ý nghĩa kết quả:** Chứng minh agent chấm điểm theo ngữ cảnh và lọc trạng thái hoạt động, không chọn máy móc theo một tiêu chí duy nhất.
+
+### TC52: Danh sách score được sắp giảm dần
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-CLOSE-LOW", "distance_km": 0.5, "rating": 3.2, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-FAR-HIGH", "distance_km": 8.0, "rating": 4.9, "status": "ONLINE", "price": 80000 },
+      { "driver_id": "D-MID-MID", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 },
+      { "driver_id": "D-OFFLINE", "distance_km": 0.3, "rating": 5.0, "status": "OFFLINE", "price": 20000 }
+    ],
+    "distance_km": 10,
+    "traffic_level": 0.5
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `selected_driver.all_scores` có thứ tự `score` giảm dần
+* **Ý nghĩa kết quả:** Đảm bảo ranking của agent nhất quán, không đảo thứ tự sai do lỗi logic.
+
+### TC53: Cân bằng trọng số khi cùng khoảng cách
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-EQ-LOW", "distance_km": 3.0, "rating": 3.0, "status": "ONLINE", "price": 40000 },
+      { "driver_id": "D-EQ-HIGH", "distance_km": 3.0, "rating": 4.8, "status": "ONLINE", "price": 40000 }
+    ],
+    "distance_km": 5,
+    "traffic_level": 0.4
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `selected_driver.driver_id = "D-EQ-HIGH"`
+* **Ý nghĩa kết quả:** Chứng minh rating được dùng làm tiêu chí phân xử hợp lý khi các yếu tố khác bằng nhau.
+
+### TC54: Tool-calling pipeline đúng thứ tự
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-CLOSE-LOW", "distance_km": 0.5, "rating": 3.2, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-FAR-HIGH", "distance_km": 8.0, "rating": 4.9, "status": "ONLINE", "price": 80000 },
+      { "driver_id": "D-MID-MID", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 },
+      { "driver_id": "D-OFFLINE", "distance_km": 0.3, "rating": 5.0, "status": "OFFLINE", "price": 20000 }
+    ],
+    "distance_km": 10,
+    "traffic_level": 0.5
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `orchestration_steps` theo thứ tự `calculateETA` -> `calculatePricing` -> `selectBestDriver`; `body.eta` khớp output ETA step
+* **Ý nghĩa kết quả:** Xác nhận agent điều phối tuần tự đúng dependency dữ liệu giữa các tool.
+
+### TC55: Thiếu dữ liệu vẫn chạy với default
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-NO-RATING", "distance_km": 2.0, "status": "ONLINE", "price": 40000 },
+      { "driver_id": "D-NORMAL", "distance_km": 3.0, "rating": 4.5, "status": "ONLINE", "price": 50000 }
+    ],
+    "distance_km": 5
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `eta`, `price`, `score` đều là số hữu hạn (không NaN/Infinity)
+* **Ý nghĩa kết quả:** Hệ thống robust với dữ liệu thiếu, tránh crash và vẫn đưa ra quyết định hữu ích.
+
+### TC56: Normal path không kích hoạt fallback
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-CLOSE-LOW", "distance_km": 0.5, "rating": 3.2, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-FAR-HIGH", "distance_km": 8.0, "rating": 4.9, "status": "ONLINE", "price": 80000 },
+      { "driver_id": "D-MID-MID", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 },
+      { "driver_id": "D-OFFLINE", "distance_km": 0.3, "rating": 5.0, "status": "OFFLINE", "price": 20000 }
+    ],
+    "distance_km": 5,
+    "traffic_level": 0.3,
+    "simulate_agent_fail": false
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `is_fallback = false`; có `selected_driver` hợp lệ
+* **Ý nghĩa kết quả:** Xác nhận đường chạy bình thường ổn định, retry/fallback chỉ dùng khi thật sự lỗi.
+
+### TC57: Loại tài xế OFFLINE khỏi tính điểm
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-OFF-1", "distance_km": 0.1, "rating": 5.0, "status": "OFFLINE", "price": 10000 },
+      { "driver_id": "D-OFF-2", "distance_km": 0.2, "rating": 5.0, "status": "OFFLINE", "price": 10000 },
+      { "driver_id": "D-ON-1", "distance_km": 5.0, "rating": 3.5, "status": "ONLINE", "price": 50000 }
+    ],
+    "distance_km": 5,
+    "traffic_level": 0.3
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; chỉ chọn `D-ON-1`; `all_scores.length = 1`
+* **Ý nghĩa kết quả:** Đảm bảo agent tuân thủ điều kiện vận hành thực tế, tránh phân công tài xế không khả dụng.
+
+### TC58: Decision log có lý do chọn
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:** dùng payload chuẩn TC51
+* **Kết quả mong đợi:** HTTP `200`; `decision_log` là string, chứa `[AGENT DECISION]` và cụm `Selected Driver`
+* **Ý nghĩa kết quả:** Tăng khả năng giải thích (explainability), giúp debug và audit quyết định của agent.
+
+### TC59: Concurrent safety với 10 request song song
+* **Endpoint:** `POST /api/ai/orchestrate` (10 requests bằng `Promise.all`)
+* **Data JSON nhập vào để test:** mỗi request có cặp driver riêng theo pattern `D-PARA-i-A/B`, với `distance_km` và `traffic_level` riêng
+* **Kết quả mong đợi:** cả 10 response `200`; mỗi response chọn driver thuộc đúng bộ của request đó (không lẫn dữ liệu chéo)
+* **Ý nghĩa kết quả:** Chứng minh agent stateless/thread-safe khi xử lý đồng thời.
+
+### TC60: Fallback khi agent fail giả lập
+* **Endpoint:** `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-CLOSE-LOW", "distance_km": 0.5, "rating": 3.2, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-FAR-HIGH", "distance_km": 8.0, "rating": 4.9, "status": "ONLINE", "price": 80000 },
+      { "driver_id": "D-MID-MID", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 },
+      { "driver_id": "D-OFFLINE", "distance_km": 0.3, "rating": 5.0, "status": "OFFLINE", "price": 20000 }
+    ],
+    "distance_km": 5,
+    "traffic_level": 0.3,
+    "simulate_agent_fail": true
+  }
+  ```
+* **Kết quả mong đợi:** HTTP `200`; `is_fallback = true`; chọn `D-CLOSE-LOW` (ONLINE đầu tiên); `eta`/`price` vẫn hữu hạn; `decision_log` chứa `FALLBACK`; có `model_version`
+* **Ý nghĩa kết quả:** Bảo đảm resilience: agent lỗi vẫn có quyết định an toàn thay vì làm gián đoạn hệ thống.
 
 ---
 

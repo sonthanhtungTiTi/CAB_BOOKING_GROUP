@@ -88,7 +88,7 @@ describe('Level 1 — Basic API & Flow (10 Test Cases)', () => {
     expect(accessToken).toBeDefined();
     expect(typeof accessToken).toBe('string');
     expect(accessToken.split('.')).toHaveLength(3);
-
+    
     if (!userId) {
       userId = body.user_id || body.user?.id;
     }

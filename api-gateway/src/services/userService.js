@@ -15,7 +15,7 @@ const userClient = axios.create({
   },
 });
 
-async function getProfile(userId) {
+async function  getProfile(userId) {
   // Gửi internal traffic, nhét x-user-id header
   const res = await userClient.get(`/profile/${userId}`, {
     headers: { 'x-user-id': userId }

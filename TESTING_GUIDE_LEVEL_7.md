@@ -323,20 +323,126 @@ Kỳ vọng: Throughput tăng ~2-3x, P95 giảm.
 
 ---
 
-## 📋 BẢNG TÓM TẮT TC61 → TC70
+## 📋 Chi tiết Test Cases theo Cấu trúc Chuẩn (TC61 → TC70)
 
-| TC | Tên | Công cụ | Cách verify |
-|----|------|---------|-------------|
-| 61 | Throughput | k6 `booking-load.js` | Error rate < 5% ở 200 VUs |
-| 62 | AI Spike | k6 `ai-spike.js` | ETA không crash ở 500 VUs |
-| 63 | Pricing Spike | k6 `ai-spike.js` | Pricing không crash ở 500 VUs |
-| 64 | TC Reserved | — | — |
-| 65 | DB Pool | Code review | `max:20, connectionTimeout:2000` |
-| 66 | Cache Hit | `GET /api/ai/cache-stats` | hit_rate > 70% sau load test |
-| 67 | Rate Limit | k6 hoặc curl loop | Request 101+ → HTTP 429 |
-| 68 | P95 Latency | k6 `booking-load.js` | p(95) < 300ms |
-| 69 | Peak Hours | k6 `peak-hours.js` | 10 phút stable, no latency drift |
-| 70 | Horizontal Scale | Docker `--scale=3` | Throughput tăng sau khi scale |
+### TC61: Throughput ETA ổn định dưới tải cao
+* **Endpoint:** `POST /api/eta`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 3,
+    "traffic_level": 0.1
+  }
+  ```
+  *(k6 xoay vòng nhiều bộ dữ liệu `distance_km` và `traffic_level` trong `booking-load.js`)*
+* **Kết quả mong đợi:** Error rate `< 5%` trong profile tải cao (ramp đến 200 VUs)
+* **Ý nghĩa kết quả:** Hệ thống giữ được độ ổn định khi lưu lượng lớn, không vỡ API ETA.
+
+### TC62: AI ETA chịu được Spike 500 VUs
+* **Endpoint:** `POST /api/eta`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 12,
+    "traffic_level": 0.4
+  }
+  ```
+  *(k6 tạo dữ liệu theo iteration, không random)*
+* **Kết quả mong đợi:** ETA error rate `< 20%`, không trả `500` hàng loạt khi spike
+* **Ý nghĩa kết quả:** Chứng minh AI service không sập khi tải tăng đột ngột.
+
+### TC63: Pricing chịu được Spike 500 VUs
+* **Endpoint:** `POST /api/pricing/calculate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 8,
+    "demand_index": 1.5,
+    "supply_index": 1.0
+  }
+  ```
+* **Kết quả mong đợi:** Pricing error rate `< 20%`, không bùng nổ lỗi `500`
+* **Ý nghĩa kết quả:** Đảm bảo service pricing vẫn phục vụ được dưới tải đột biến.
+
+### TC64: Reserved
+* **Endpoint:** N/A
+* **Data JSON nhập vào để test:** N/A
+* **Kết quả mong đợi:** N/A (dành cho mở rộng)
+* **Ý nghĩa kết quả:** Giữ slot testcase cho yêu cầu hiệu năng tương lai.
+
+### TC65: DB Connection Pool bảo vệ backend
+* **Endpoint:** N/A (code/config verification)
+* **Data JSON nhập vào để test:** N/A
+* **Kết quả mong đợi:** Pool có `max: 20`, `idleTimeoutMillis: 30000`, `connectionTimeoutMillis: 2000`
+* **Ý nghĩa kết quả:** Fail-fast khi quá tải DB, tránh block thread và treo hệ thống dây chuyền.
+
+### TC66: Cache hit rate của AI
+* **Endpoint:** `GET /api/ai/cache-stats`
+* **Data JSON nhập vào để test:** Không có body (GET)
+* **Kết quả mong đợi:** `hit_rate_percent > 70%` sau khi chạy tải với input lặp lại
+* **Ý nghĩa kết quả:** Cache hoạt động hiệu quả, giảm tính toán lặp và giảm độ trễ trung bình.
+
+### TC67: Rate limit tự bảo vệ hệ thống
+* **Endpoint:** `POST /api/eta`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 5,
+    "traffic_level": 0.3
+  }
+  ```
+* **Kết quả mong đợi:** Khi vượt ngưỡng `200 request/phút/IP` trả `429 Too Many Requests`
+* **Ý nghĩa kết quả:** Chặn burst traffic/xu hướng DDoS lớp ứng dụng, bảo vệ tài nguyên backend.
+
+### TC68: P95 latency ETA dưới 300ms
+* **Endpoint:** `POST /api/eta`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 20,
+    "traffic_level": 0.7
+  }
+  ```
+  *(benchmark trên toàn bộ tập payload trong `booking-load.js`)*
+* **Kết quả mong đợi:** `p(95) < 300ms`
+* **Ý nghĩa kết quả:** Trải nghiệm người dùng ổn định ở percentile cao, không chỉ trung bình đẹp.
+
+### TC69: Peak hours sustained load 10 phút
+* **Endpoint:**
+  1. `POST /api/eta`
+  2. `POST /api/ai/surge`
+  3. `POST /api/ai/orchestrate`
+* **Data JSON nhập vào để test:**
+  ```json
+  {
+    "distance_km": 5,
+    "traffic_level": 0.3
+  }
+  ```
+  ```json
+  {
+    "demand_index": 3.0,
+    "supply_index": 1.0
+  }
+  ```
+  ```json
+  {
+    "drivers": [
+      { "driver_id": "D-PH-1", "distance_km": 0.5, "rating": 4.8, "status": "ONLINE", "price": 30000 },
+      { "driver_id": "D-PH-2", "distance_km": 2.0, "rating": 4.5, "status": "ONLINE", "price": 45000 }
+    ],
+    "distance_km": 7,
+    "traffic_level": 0.5
+  }
+  ```
+* **Kết quả mong đợi:** Overall `p95 < 500ms`, error rate `< 5%`, latency trend ổn định trong giai đoạn duy trì 5 phút
+* **Ý nghĩa kết quả:** Xác nhận hệ thống chịu tải giờ cao điểm dài hạn, không có dấu hiệu rò rỉ tài nguyên.
+
+### TC70: Horizontal scaling tăng thông lượng
+* **Endpoint:** N/A (infrastructure scaling scenario)
+* **Data JSON nhập vào để test:** Dùng lại bộ payload của TC69 trước và sau khi scale
+* **Kết quả mong đợi:** Khi scale service lên nhiều replica, throughput tăng và P95 giảm so với 1 instance
+* **Ý nghĩa kết quả:** Chứng minh kiến trúc microservices có khả năng mở rộng theo chiều ngang.
 
 ---
 

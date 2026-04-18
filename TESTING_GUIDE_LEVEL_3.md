@@ -34,57 +34,170 @@ Khi chạy thành công, kết quả terminal sẽ hiển thị 10/10 Test Cases
 
 ---
 
-## 📋 3. Chi tiết 10 Test Cases (TC21 - TC30)
+## 📋 3. Chi tiết 10 Test Cases theo Cấu trúc Chuẩn (TC21 - TC30)
 
-### 📌 Giao tiếp đồng bộ (Synchronous Calls)
-**🔥 TC21: Booking Service gọi đồng bộ AI Service lấy ETA**
-- **Action**: Gửi `POST /api/bookings` tạo chuyến đi.
-- **Mong đợi**: Trước khi lưu Database, Booking Service gọi `axios` sang AI Service (Port 4010). API trả về `201 Created` và trong body có thuộc tính `eta > 0`.
-- **Thực tế implemented**: AI tính ETA trơn tru qua công thức khoảng cách và mức độ giao thông.
+### TC21: Booking gọi AI Service để lấy ETA
+* **Endpoint:** `POST /api/bookings`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 10
+	}
+	```
+* **Kết quả mong đợi:** HTTP `201 Created`, response có `eta > 0`
+* **Ý nghĩa kết quả:** Xác nhận luồng gọi đồng bộ từ Booking sang AI hoạt động đúng trước khi hoàn tất tạo booking.
 
-**🔥 TC22: Booking Service gọi đồng bộ Pricing Service lấy Price**
-- **Action**: Gửi `POST /api/bookings`.
-- **Mong đợi**: Booking Service gọi `axios` sang Pricing Service (Port 4006) để lấy giá trả về cho khách. Body chứa `price > 0` và `surge`.
-- **Thực tế implemented**: Giải quyết được lỗi response wrap 2 lớp `.data.data` do Middleware của gateway/pricing.
+### TC22: Booking gọi Pricing Service để lấy giá
+* **Endpoint:** `POST /api/bookings`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5
+	}
+	```
+* **Kết quả mong đợi:** HTTP `201 Created`, response có `price > 0` và có trường `surge`
+* **Ý nghĩa kết quả:** Chứng minh service pricing tích hợp tốt, dữ liệu giá trả về hợp lệ trong luồng đặt xe thật.
 
-### 📌 Thu thập Context & AI Logic
-**🔥 TC23: Build AI Context thực tế (Thu thập thông tin chuyến đi)**
-- **Action**: `POST /api/ai/context`.
-- **Mong đợi**: System quét Redis qua tập lệnh `GEORADIUS` lấy danh sách Driver đang trực quanh điểm đón.
-- **Thực tế implemented**: Không Fake data, không tạo mảng rỗng, lấy chính xác schema `{ ride_id, pickup, drop, available_drivers, traffic_level, demand_index, supply_index }`.
+### TC23: Build AI Context từ dữ liệu thực tế
+* **Endpoint:** `POST /api/ai/context`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"ride_id": "test-ride-001",
+		"pickupLat": 10.76,
+		"pickupLng": 106.66,
+		"destLat": 10.77,
+		"destLng": 106.70,
+		"distance_km": 5
+	}
+	```
+* **Kết quả mong đợi:** HTTP `200 OK`, response đúng schema context (có `available_drivers`, `traffic_level`, `demand_index`, `supply_index`)
+* **Ý nghĩa kết quả:** Đảm bảo AI dùng context thật (Redis geospatial + metadata chuyến đi), không dùng dữ liệu giả.
 
-**🔥 TC28: AI Agent chọn tài xế Deterministic**
-- **Action**: `POST /api/ai/match`.
-- **Mong đợi**: Agent duyệt qua `available_drivers` và trả về `driver_id` có `distance_km` thấp nhất. Tuyệt đối chặn `Math.random()`.
-- **Thực tế implemented**: Logic sắp xếp chặt chẽ và test được verify bằng việc bơm 3 giả lập Redis tọa độ gần - vừa - xa rồi assertion.
+### TC24: End-to-End booking -> accept -> notification
+* **Endpoint:**
+	1. `POST /api/bookings`
+	2. `PUT /api/bookings/:id/accept`
+	3. `POST /api/notification/send`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5
+	}
+	```
+	```json
+	{
+		"driver_id": "<UUID hợp lệ>"
+	}
+	```
+	```json
+	{
+		"user_id": "<user_id đã đăng nhập>",
+		"message": "TC24 E2E test notification"
+	}
+	```
+* **Kết quả mong đợi:** Chuỗi endpoint chạy thông suốt, notification trả `200` và `sent: true`
+* **Ý nghĩa kết quả:** Xác nhận luồng tích hợp toàn vẹn xuyên service, event và notification không bị đứt.
 
-### 📌 Nhắn tin bất đồng bộ (Kafka Event-Driven)
-**🔥 TC25: Khởi tạo luồng Kafka `ride_requested`**
-- **Action**: Khách hàng tạo Booking (`POST /api/bookings`).
-- **Mong đợi**: Hệ thống Produce message lên Topic Kafka `ride_events` với `event_type: "ride_requested"`.
+### TC25: Publish sự kiện `ride_requested` khi tạo booking
+* **Endpoint:** `POST /api/bookings`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5
+	}
+	```
+* **Kết quả mong đợi:** HTTP `201 Created`, response có `booking_id` và `status: "REQUESTED"`
+* **Ý nghĩa kết quả:** Cho thấy bước tạo booking đã kích hoạt đúng trạng thái và sẵn sàng phát sự kiện Kafka tương ứng.
 
-**🔥 TC27: API Accept Booking (Cập nhật DB & Bắn Kafka)**
-- **Action**: Driver nhấn chấp nhận thông qua API `PUT /api/bookings/:id/accept`.
-- **Mong đợi**: Trạng thái DB cập nhật thành `ACCEPTED`, gán `driver_id` (sử dụng UUID chuẩn), và Produce message lên Topic `ride_events` với `event_type: "ride_accepted"`.
+### TC26: Notification xử lý luồng `ride_accepted`
+* **Endpoint:**
+	1. `POST /api/bookings`
+	2. `PUT /api/bookings/:id/accept`
+	3. `POST /api/notification/send`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5
+	}
+	```
+	```json
+	{
+		"driver_id": "<UUID hợp lệ>"
+	}
+	```
+	```json
+	{
+		"user_id": "<driver_uuid>",
+		"message": "Ride accepted confirmation"
+	}
+	```
+* **Kết quả mong đợi:** Notification endpoint trả HTTP `200 OK`, body có `sent: true`
+* **Ý nghĩa kết quả:** Xác nhận service thông báo đang sống và xử lý đúng sau sự kiện chấp nhận cuốc xe.
 
-**🔥 TC26: Notification Service thực thi bắn tin nhắn từ `ride_accepted`**
-- **Mong đợi**: Notification Consumer (Port 4008) lắng nghe trên topic `ride_events`, khi nhận event subtype `ride_accepted` sẽ sinh lệnh mô phỏng push notification xuống app của Driver.
-- **Thực tế implemented**: Đã log ra màn terminal quá trình Notification xử lý event hợp lý. Tham chiếu log `[NotifConsumer] Notification sent to driver <uuid>`.
+### TC27: Accept booking thành công
+* **Endpoint:** `PUT /api/bookings/:id/accept`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"driver_id": "<UUID hợp lệ>"
+	}
+	```
+* **Kết quả mong đợi:** HTTP `200 OK`, response có `status: "ACCEPTED"`, `booking_id` đúng với booking đã tạo
+* **Ý nghĩa kết quả:** Bảo đảm cập nhật trạng thái booking đúng nghiệp vụ và dữ liệu driver có kiểu hợp lệ.
 
-**🔥 TC24: End-to-End Trôi Chảy (Luồng Event Toàn Vẹn)**
-- **Mong đợi**: 1 lượt gọi API Booking -> Accept -> Event truyền Kafka -> Consumer xử lý độc lập đều không bị ngắt/blocking. Flow liên tục Payment & Node được kích hoạt mà không làm giảm performance của API chính.
-- **Thực tế implemented**: Supertest giả lập timeout/khựng delay bằng `await new Promise(...)` rồi gọi thử verify logic E2E.
+### TC28: AI match chọn tài xế gần nhất (deterministic)
+* **Endpoint:** `POST /api/ai/match`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"ride_id": "test-ride-match",
+		"pickupLat": 10.76,
+		"pickupLng": 106.66,
+		"destLat": 10.77,
+		"destLng": 106.70,
+		"distance_km": 5
+	}
+	```
+* **Kết quả mong đợi:** HTTP `200 OK`, `selected_driver.driver_id = "DRV_NEAR"`
+* **Ý nghĩa kết quả:** Khẳng định thuật toán chọn tài xế có tính xác định, ưu tiên tài xế gần nhất và không dùng random.
 
-### 📌 Định tuyến (Gateway Routing)
-**🔥 TC29: API Gateway Proxy**
-- **Action**: Clients gọi `POST /api/bookings` ở cổng ngoài `3000`.
-- **Mong đợi**: Request ngầm định tuyến trỏ đúng về cụm `Booking Service` thông qua xác thực Token JWT Middleware và Header (`x-user-id` forwarding). Không gặp lỗi Route Not Found.
+### TC29: Gateway proxy route booking chính xác
+* **Endpoint:** `POST /api/bookings`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5
+	}
+	```
+* **Kết quả mong đợi:** HTTP `2xx`, body có `booking_id`
+* **Ý nghĩa kết quả:** Chứng minh API Gateway định tuyến đúng sang Booking Service, không lỗi route và không rớt middleware auth.
 
-### 📌 Khả năng chịu lỗi (Resilience / Fallback)
-**🔥 TC30: Fallback logic khi Pricing Service sụp/timeout**
-- **Action**: Gửi `POST /api/bookings` với cờ giả lập `simulate_timeout: true`.
-- **Mong đợi**: Logic Pricing cố ý Thread Sleep 4 giây. Axios Booking config timeout 2 giây. Hết Retry 1 lần, Booking Service **KHÔNG ĐƯỢC CRASH 500**. Nó phải bật phương án dự phòng (Fallback): Tính giá nhanh bằng `15000 * distance_km`. Booking Code trả về 201 Created cùng giá `price` an toàn.
-- **Thực tế implemented**: Xử lý triệt để đai an toàn `try-catch` kèm fallback value. Log rõ ràng quá trình fallback.
+### TC30: Fallback khi Pricing timeout
+* **Endpoint:** `POST /api/bookings`
+* **Data JSON nhập vào để test:**
+	```json
+	{
+		"pickup": { "lat": 10.76, "lng": 106.66 },
+		"drop": { "lat": 10.77, "lng": 106.70 },
+		"distance_km": 5,
+		"simulate_timeout": true
+	}
+	```
+* **Kết quả mong đợi:** HTTP `201 Created`, response vẫn có `booking_id`, `price > 0`, `surge = 1.0`
+* **Ý nghĩa kết quả:** Xác nhận cơ chế chịu lỗi hoạt động đúng, Pricing timeout nhưng Booking vẫn trả kết quả an toàn thay vì crash.
 
 ---
 

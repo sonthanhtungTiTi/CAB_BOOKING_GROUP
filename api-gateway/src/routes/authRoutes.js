@@ -47,5 +47,14 @@ router.post('/logout', async (req, res, next) => {
     next(err);
   }
 });
-
+// ─── GET /api/auth/profile/:userId (Protected) ──────────────
+router.get('/profile/:userId', async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const result = await authService.getProfile(userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 module.exports = router;

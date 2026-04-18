@@ -13,6 +13,7 @@ const bookingRoutes = require('./src/routes/bookingRoutes');
 const rideRoutes = require('./src/routes/rideRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const reviewRoutes = require('./src/routes/reviewRoutes');
+const authService = require('./src/services/authService');
 const apiLimiter = require('./src/middlewares/rateLimiter');
 const { register, metricsMiddleware } = require('./src/middlewares/metricsMiddleware');
 
@@ -314,6 +315,17 @@ app.post('/api/payment/fraud', async (req, res, next) => {
     if (err.response && err.response.data) {
       return res.status(err.response.status || 500).json(err.response.data);
     }
+    next(err);
+  }
+});
+
+// ─── GET /api/profile/:userId (Public) ──────────────────────
+app.get('/api/profile/:userId', async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const result = await authService.getProfile(userId);
+    res.json(result);
+  } catch (err) {
     next(err);
   }
 });

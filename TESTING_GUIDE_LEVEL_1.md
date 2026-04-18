@@ -33,14 +33,14 @@ TC1 (Register) → TC2 (Login → LƯU TOKEN + USER_ID)
 
 ---
 
-## Mục lục
+## Mục lục  
 
 | TC | Tên Test Case | Endpoint | Auth |
 |----|---------------|----------|------|
 | 1 | Đăng ký user thành công | `POST /api/auth/register` | ❌ Không cần |
 | 2 | Đăng nhập trả JWT hợp lệ | `POST /api/auth/login` | ❌ Không cần |
 | 3 | Tạo booking (Status = REQUESTED) | `POST /api/bookings` | ✅ Bearer Token |
-| 4 | Lấy danh sách booking của user | `GET /api/bookings?user_id={{user_id}}` | ✅ Bearer Token hoặc Query Param |
+| 4 | Lấy danh sách booking của user | `GET /api/bookings?user_id={{2059258d-26a5-436e-b451-82c1b61cc265}}` | ✅ Bearer Token hoặc Query Param |
 | 5 | Driver chuyển trạng thái ONLINE | `PUT /api/driver/status` | ❌ Không cần |
 | 6 | Tạo booking (Kiểm tra schema đầy đủ) | `POST /api/bookings` | ✅ Bearer Token |
 | 7 | API ETA trả giá trị > 0 | `POST /api/eta` | ❌ Không cần |
@@ -302,11 +302,11 @@ Token: <paste access_token từ TC2 vào đây>
 
 ### Body (JSON)
 ```json
-{
-  "pickup": {"lat": 10.76, "lng": 106.66},
-  "drop": {"lat": 10.77, "lng": 106.70},
-  "distance_km": 5
-}
+  {
+    "pickup": {"lat": 10.76, "lng": 106.66},
+    "drop": {"lat": 10.77, "lng": 106.70},
+    "distance_km": 5
+  }
 ```
 
 ### Checklist kiểm tra
